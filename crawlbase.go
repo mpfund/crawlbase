@@ -9,6 +9,7 @@ import(
 
 type FormInput struct {
 	Name  string
+	Type string
 	Value string
 }
 
@@ -21,6 +22,7 @@ type Form struct {
 type Link struct {
 	Url  string
 	Type string
+	Rel string
 }
 
 type Page struct {
@@ -41,13 +43,14 @@ func GetLinks(doc *goquery.Document,baseUrl *url.URL)[]Link{
 	links := []Link{}
 	doc.Find("link").Each(func(i int, s *goquery.Selection) {
 		link := Link{}
-		href, exists := s.Attr("href")
-		if exists{
-			link.Url = href;
+		if href, exists := s.Attr("href");exists{
+			link.Url = ToAbsUrl(baseUrl,href);
 		}
-		linkType, exists := s.Attr("type")
-		if exists{
+		if linkType, exists := s.Attr("type");exists{
 			link.Type = linkType;
+		}
+		if rel, exists := s.Attr("rel");exists{
+			link.Rel = rel;
 		}
 		links = append(links,link)
 	})
@@ -61,7 +64,7 @@ func GetHrefs(doc *goquery.Document,baseUrl *url.URL)[]string{
 	doc.Find("a").Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
-			var fullUrl = ToAbsUrl(baseUrl, href)
+			var fullUrl = ToAbsUrl(baseUrl,href)
 			_, isAlreadyAdded := hrefsTest[fullUrl]
 			if !isAlreadyAdded {
 				hrefsTest[fullUrl] = true
@@ -77,25 +80,25 @@ func GetFormUrls(doc *goquery.Document,baseUrl *url.URL)[]Form{
 	
 	doc.Find("form").Each(func(i int, s *goquery.Selection) {
 		form := Form{}
-		href, exists := s.Attr("action")
-		if exists{
-			form.Url = href;
+		if href, exists := s.Attr("action"); exists{
+			form.Url = ToAbsUrl(baseUrl,href);
 		}
-		method, exists := s.Attr("method")
-		if exists{
+		if method, exists := s.Attr("method");exists{
 			form.Method = method
 		}
 		form.Inputs = []FormInput{}
 		s.Find("input").Each(func(i int, s *goquery.Selection){
 			input := FormInput{}
-			name, exists := s.Attr("name")
-			if exists{
+			if name, exists := s.Attr("name");exists{
 				input.Name = name
 			}
-			value, exists := s.Attr("value")
-			if exists{
+			if value, exists := s.Attr("value");exists{
 				input.Value = value
 			}
+			if inputType, exists := s.Attr("type");exists{
+				input.Type = inputType
+			}
+			
 			form.Inputs = append(form.Inputs,input)
 		})
 		
