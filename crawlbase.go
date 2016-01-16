@@ -19,6 +19,13 @@ type Form struct {
 	Inputs []FormInput
 }
 
+type Cookie struct {
+	Name    string
+	Value    string
+	Domain string
+	Httponly bool
+}
+
 type Ressource struct {
 	Url  string
 	Type string
@@ -43,6 +50,7 @@ type Page struct {
 	Uid          string
 	Body         string
 	JSInfo		 []JSInfo
+	Cookies		 []Cookie
 }
 
 func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
