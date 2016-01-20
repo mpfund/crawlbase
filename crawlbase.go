@@ -51,6 +51,7 @@ type Page struct {
 	Body         string
 	JSInfo		 []JSInfo
 	Cookies		 []Cookie
+	Requests	 []Ressource
 }
 
 func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
