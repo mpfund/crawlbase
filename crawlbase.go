@@ -39,7 +39,8 @@ type JSInfo struct{
 }
 
 type Page struct {
-	Url          string
+	URL          string
+	RequestURI 	 string
 	CrawlTime    int
 	Hrefs        []string
 	Forms        []Form
