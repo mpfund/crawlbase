@@ -1,11 +1,44 @@
 package crawlbase
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/PuerkitoBio/goquery"
+	"encoding/json"
+	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
 	"net/url"
+	"regexp"
+	"time"
+
+	"github.com/BlackEspresso/htmlcheck"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/miekg/dns"
 )
+
+type Page struct {
+	URL          string
+	CrawlTime    int
+	RespCode     int
+	RespDuration int
+	CrawlerId    int
+	Uid          string
+	RespInfo     ResponseInfo
+}
+
+type ResponseInfo struct {
+	Body       string
+	Hrefs      []string
+	Forms      []Form
+	Ressources []Ressource
+	JSInfo     []JSInfo
+	Cookies    []Cookie
+	Requests   []Ressource
+	TextUrls   []string
+	HtmlErrors []*htmlcheck.ValidationError
+}
 
 type FormInput struct {
 	Name  string
@@ -20,9 +53,9 @@ type Form struct {
 }
 
 type Cookie struct {
-	Name    string
+	Name     string
 	Value    string
-	Domain string
+	Domain   string
 	Httponly bool
 }
 
@@ -30,29 +63,106 @@ type Ressource struct {
 	Url  string
 	Type string
 	Rel  string
-	Tag	string
+	Tag  string
 }
 
-type JSInfo struct{
-	Source	string
-	Value	string
+type JSInfo struct {
+	Source string
+	Value  string
 }
 
-type Page struct {
-	URL          string
-	RequestURI 	 string
-	CrawlTime    int
-	Hrefs        []string
-	Forms        []Form
-	Ressources   []Ressource
-	RespCode     int
-	RespDuration int
-	CrawlerId    int
-	Uid          string
-	Body         string
-	JSInfo		 []JSInfo
-	Cookies		 []Cookie
-	Requests	 []Ressource
+type Crawler struct {
+	Header    http.Header
+	Client    http.Client
+	Validator htmlcheck.Validator
+}
+
+func NewCrawler() *Crawler {
+	cw := Crawler{}
+	cw.Client = http.Client{}
+	cw.Header = http.Header{}
+	cw.Client.Timeout = 30 * time.Second
+	cw.Validator = htmlcheck.Validator{}
+	return &cw
+}
+
+func LoadTagsFromFile(path string) ([]*htmlcheck.ValidTag, error) {
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var validTags []*htmlcheck.ValidTag
+	err = json.Unmarshal(content, &validTags)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return validTags, nil
+}
+
+func WriteTagsToFile(tags []*htmlcheck.ValidTag, path string) error {
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+	ioutil.WriteFile(path, b, 755)
+	return nil
+}
+
+func (c *Crawler) GetPage(url, method string) (*Page, error) {
+	timeStart := time.Now()
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range c.Header {
+		req.Header.Set(k, v[0])
+	}
+
+	res, err := c.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	timeDur := time.Now().Sub(timeStart)
+
+	page := c.PageFromResponse(req, res, timeDur)
+	return page, nil
+}
+
+func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDur time.Duration) *Page {
+	page := Page{}
+	body, err := ioutil.ReadAll(res.Body)
+
+	if err == nil {
+		page.RespInfo.Body = string(body)
+		ioreader := bytes.NewReader(body)
+		doc, err := goquery.NewDocumentFromReader(ioreader)
+		page.RespInfo.TextUrls = GetUrlsFromText(page.RespInfo.Body)
+		page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(page.RespInfo.Body)
+		if err == nil {
+			page.RespInfo.Hrefs = GetHrefs(doc, req.URL)
+			page.RespInfo.Forms = GetFormUrls(doc, req.URL)
+			page.RespInfo.Ressources = GetRessources(doc, req.URL)
+		}
+	}
+
+	page.CrawlTime = int(time.Now().Unix())
+	page.URL = req.URL.String()
+	page.Uid = ToSha256(page.URL)
+	page.RespCode = res.StatusCode
+	page.RespDuration = int(timeDur.Seconds() * 1000)
+	return &page
+}
+
+func GetUrlsFromText(text string) []string {
+	r, err := regexp.Compile("((https?|ftp|file):)?//[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[a-zA-Z0-9+&@#/%=~_|]")
+	if err != nil {
+		log.Fatal(err)
+	}
+	return r.FindAllString(text, -1)
 }
 
 func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
@@ -79,13 +189,13 @@ func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
 		}
 		ressources = append(ressources, img)
 	})
-	
+
 	doc.Find("script").Each(func(i int, s *goquery.Selection) {
 		script := Ressource{}
 		script.Tag = "script"
 		if href, exists := s.Attr("src"); exists {
 			script.Url = ToAbsUrl(baseUrl, href)
-		}else{
+		} else {
 			return
 		}
 		if scriptType, exists := s.Attr("type"); exists {
@@ -98,7 +208,7 @@ func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
 		style.Tag = "style"
 		if href, exists := s.Attr("src"); exists {
 			style.Url = ToAbsUrl(baseUrl, href)
-		}else{
+		} else {
 			return
 		}
 		if styleType, exists := s.Attr("type"); exists {
@@ -157,6 +267,28 @@ func GetFormUrls(doc *goquery.Document, baseUrl *url.URL) []Form {
 		forms = append(forms, form)
 	})
 	return forms
+}
+
+func resolveDNS(name string) ([]string, error) {
+	config, _ := dns.ClientConfigFromFile("./resolv.conf")
+	c := new(dns.Client)
+
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn(name), dns.TypeANY)
+	m.RecursionDesired = true
+
+	r, _, err := c.Exchange(m, net.JoinHostPort(config.Servers[0], config.Port))
+	if err != nil {
+		return nil, err
+	}
+
+	resp := []string{}
+
+	for _, v := range r.Answer {
+		resp = append(resp, v.String())
+	}
+
+	return resp, nil
 }
 
 func ToAbsUrl(baseurl *url.URL, weburl string) string {
