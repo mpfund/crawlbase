@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/BlackEspresso/htmlcheck"
@@ -222,11 +223,34 @@ func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
 	return ressources
 }
 
-func CheckStyleVisible(style string) bool {
+func GetStylesCss(style string) map[string]string {
+	splitted := strings.Split(style, ";")
+	attrs := map[string]string{}
+	for _, k := range splitted {
+		kv := strings.Split(k, ":")
+		if len(kv) > 1 {
+			key := strings.TrimSpace(kv[0])
+			value := strings.TrimSpace(kv[1])
+			attrs[key] = value
+		}
+	}
+	return attrs
+}
+
+func IsVisibleCss(style string) bool {
+	styles := GetStylesCss(style)
+	display, hasDisplay := styles["display"]
+	visibilty, hasVisibilty := styles["visibility"]
+	if hasDisplay && display == "none" {
+		return false
+	}
+	if hasVisibilty && visibilty == "hidden" {
+		return false
+	}
 	return true
 }
 
-func GetVisibleHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
+func GetInvisibleHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
 	hrefs := []string{}
 	hrefsTest := map[string]bool{}
 
@@ -235,8 +259,8 @@ func GetVisibleHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
 		if exists {
 			style, hasStyle := s.Attr("style")
 			if hasStyle {
-				isVisible := CheckStyleVisible(style)
-				if !isVisible {
+				isVisible := IsVisibleCss(style)
+				if isVisible {
 					return
 				}
 			}
