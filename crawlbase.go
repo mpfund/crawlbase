@@ -77,10 +77,13 @@ type Crawler struct {
 	Validator htmlcheck.Validator
 }
 
+var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
+
 func NewCrawler() *Crawler {
 	cw := Crawler{}
 	cw.Client = http.Client{}
 	cw.Header = http.Header{}
+	cw.Header.Set("User-Agent", headerUserAgentChrome)
 	cw.Client.Timeout = 30 * time.Second
 	cw.Validator = htmlcheck.Validator{}
 	return &cw
@@ -219,6 +222,37 @@ func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
 	return ressources
 }
 
+func CheckStyleVisible(style string) bool {
+	return true
+}
+
+func GetVisibleHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
+	hrefs := []string{}
+	hrefsTest := map[string]bool{}
+
+	doc.Find("a").Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr("href")
+		if exists {
+			style, hasStyle := s.Attr("style")
+			if hasStyle {
+				isVisible := CheckStyleVisible(style)
+				if !isVisible {
+					return
+				}
+			}
+
+			var fullUrl = ToAbsUrl(baseUrl, href)
+			_, isAlreadyAdded := hrefsTest[fullUrl]
+			if !isAlreadyAdded {
+				hrefsTest[fullUrl] = true
+				hrefs = append(hrefs, fullUrl)
+			}
+		}
+	})
+
+	return hrefs
+}
+
 func GetHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
 	hrefs := []string{}
 	hrefsTest := map[string]bool{}
@@ -234,6 +268,7 @@ func GetHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
 			}
 		}
 	})
+
 	return hrefs
 }
 
