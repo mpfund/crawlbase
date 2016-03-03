@@ -147,16 +147,10 @@ func (c *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 	page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(page.RespInfo.Body)
 
 	if err == nil {
-		hrefs := GetHrefs(doc, url)
+		hrefs := GetHrefs(doc, url, !c.IncludeHiddenLinks)
 		page.RespInfo.Hrefs = hrefs
 		page.RespInfo.Forms = GetFormUrls(doc, url)
 		page.RespInfo.Ressources = GetRessources(doc, url)
-		if !c.IncludeHiddenLinks {
-			hiddenLinks := GetInvisibleHrefs(doc, url)
-			for _, k := range hiddenLinks {
-				hrefs = removeStringInSlice(hrefs, k)
-			}
-		}
 	}
 	return &page
 }
@@ -174,15 +168,6 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.RespCode = res.StatusCode
 	page.RespDuration = int(timeDur.Seconds() * 1000)
 	return page
-}
-
-func removeStringInSlice(a []string, el string) []string {
-	for i, v := range a {
-		if v == el {
-			return append(a[:i], a[i+1:]...)
-		}
-	}
-	return a
 }
 
 func GetUrlsFromText(text string) []string {
@@ -274,7 +259,7 @@ func IsVisibleCss(style string) bool {
 	return true
 }
 
-func GetInvisibleHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
+func GetHrefs(doc *goquery.Document, baseUrl *url.URL, removeInvisibles bool) []string {
 	hrefs := []string{}
 	hrefsTest := map[string]bool{}
 
@@ -282,32 +267,13 @@ func GetInvisibleHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
 		href, exists := s.Attr("href")
 		if exists {
 			style, hasStyle := s.Attr("style")
-			if hasStyle {
+			if removeInvisibles && hasStyle {
 				isVisible := IsVisibleCss(style)
 				if isVisible {
 					return
 				}
 			}
 
-			var fullUrl = ToAbsUrl(baseUrl, href)
-			_, isAlreadyAdded := hrefsTest[fullUrl]
-			if !isAlreadyAdded {
-				hrefsTest[fullUrl] = true
-				hrefs = append(hrefs, fullUrl)
-			}
-		}
-	})
-
-	return hrefs
-}
-
-func GetHrefs(doc *goquery.Document, baseUrl *url.URL) []string {
-	hrefs := []string{}
-	hrefsTest := map[string]bool{}
-
-	doc.Find("a").Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("href")
-		if exists {
 			var fullUrl = ToAbsUrl(baseUrl, href)
 			_, isAlreadyAdded := hrefsTest[fullUrl]
 			if !isAlreadyAdded {
