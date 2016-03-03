@@ -73,9 +73,10 @@ type JSInfo struct {
 }
 
 type Crawler struct {
-	Header    http.Header
-	Client    http.Client
-	Validator htmlcheck.Validator
+	Header             http.Header
+	Client             http.Client
+	Validator          htmlcheck.Validator
+	IncludeHiddenLinks bool
 }
 
 var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
@@ -146,10 +147,18 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 		doc, err := goquery.NewDocumentFromReader(ioreader)
 		page.RespInfo.TextUrls = GetUrlsFromText(page.RespInfo.Body)
 		page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(page.RespInfo.Body)
+
 		if err == nil {
-			page.RespInfo.Hrefs = GetHrefs(doc, req.URL)
+			hrefs := GetHrefs(doc, req.URL)
+			page.RespInfo.Hrefs = hrefs
 			page.RespInfo.Forms = GetFormUrls(doc, req.URL)
 			page.RespInfo.Ressources = GetRessources(doc, req.URL)
+			if !c.IncludeHiddenLinks {
+				hiddenLinks := GetInvisibleHrefs(doc, req.URL)
+				for _, k := range hiddenLinks {
+					hrefs = removeStringInSlice(hrefs, k)
+				}
+			}
 		}
 	}
 
@@ -159,6 +168,15 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.RespCode = res.StatusCode
 	page.RespDuration = int(timeDur.Seconds() * 1000)
 	return &page
+}
+
+func removeStringInSlice(a []string, el string) []string {
+	for i, v := range a {
+		if v == el {
+			return append(a[:i], a[i+1:]...)
+		}
+	}
+	return a
 }
 
 func GetUrlsFromText(text string) []string {
