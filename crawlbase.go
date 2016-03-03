@@ -158,7 +158,7 @@ func (c *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDur time.Duration) *Page {
 	body, err := ioutil.ReadAll(res.Body)
 	page := &Page{}
-	if err != nil {
+	if err == nil {
 		page = c.PageFromData(body, req.URL)
 	}
 
