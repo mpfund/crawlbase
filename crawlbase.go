@@ -137,29 +137,35 @@ func (c *Crawler) GetPage(url, method string) (*Page, error) {
 	return page, nil
 }
 
-func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDur time.Duration) *Page {
+func (c *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 	page := Page{}
-	body, err := ioutil.ReadAll(res.Body)
+
+	page.RespInfo.Body = string(data)
+	ioreader := bytes.NewReader(data)
+	doc, err := goquery.NewDocumentFromReader(ioreader)
+	page.RespInfo.TextUrls = GetUrlsFromText(page.RespInfo.Body)
+	page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(page.RespInfo.Body)
 
 	if err == nil {
-		page.RespInfo.Body = string(body)
-		ioreader := bytes.NewReader(body)
-		doc, err := goquery.NewDocumentFromReader(ioreader)
-		page.RespInfo.TextUrls = GetUrlsFromText(page.RespInfo.Body)
-		page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(page.RespInfo.Body)
-
-		if err == nil {
-			hrefs := GetHrefs(doc, req.URL)
-			page.RespInfo.Hrefs = hrefs
-			page.RespInfo.Forms = GetFormUrls(doc, req.URL)
-			page.RespInfo.Ressources = GetRessources(doc, req.URL)
-			if !c.IncludeHiddenLinks {
-				hiddenLinks := GetInvisibleHrefs(doc, req.URL)
-				for _, k := range hiddenLinks {
-					hrefs = removeStringInSlice(hrefs, k)
-				}
+		hrefs := GetHrefs(doc, url)
+		page.RespInfo.Hrefs = hrefs
+		page.RespInfo.Forms = GetFormUrls(doc, url)
+		page.RespInfo.Ressources = GetRessources(doc, url)
+		if !c.IncludeHiddenLinks {
+			hiddenLinks := GetInvisibleHrefs(doc, url)
+			for _, k := range hiddenLinks {
+				hrefs = removeStringInSlice(hrefs, k)
 			}
 		}
+	}
+	return &page
+}
+
+func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDur time.Duration) *Page {
+	body, err := ioutil.ReadAll(res.Body)
+	page := &Page{}
+	if err != nil {
+		page = c.PageFromData(body, req.URL)
 	}
 
 	page.CrawlTime = int(time.Now().Unix())
@@ -167,7 +173,7 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.Uid = ToSha256(page.URL)
 	page.RespCode = res.StatusCode
 	page.RespDuration = int(timeDur.Seconds() * 1000)
-	return &page
+	return page
 }
 
 func removeStringInSlice(a []string, el string) []string {
