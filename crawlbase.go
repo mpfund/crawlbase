@@ -30,9 +30,9 @@ type Page struct {
 	Uid          string
 	Response     *PageRequest
 	Request      *PageResponse
-	RespInfo     ResponseInfo
-	ResponseBody []byte `json:"-"`
-	RequestBody  []byte `json:"-"`
+	RespInfo     ResponseInfo `json:"-"`
+	ResponseBody []byte       `json:"-"`
+	RequestBody  []byte       `json:"-"`
 }
 
 type PageResponse struct {
@@ -206,8 +206,11 @@ func (c *Crawler) SavePage(page *Page) {
 
 	content, err := json.MarshalIndent(page, "", "  ")
 	checkError(err)
-	err = ioutil.WriteFile("./storage/"+fileName+".httpt", content, 0666)
+	err = ioutil.WriteFile("./storage/"+fileName+".http", content, 0666)
 
+	content, err = json.MarshalIndent(page.RespInfo, "", "  ")
+	checkError(err)
+	err = ioutil.WriteFile("./storage/"+fileName+".httpInfo", content, 0666)
 }
 
 func checkError(e error) {
