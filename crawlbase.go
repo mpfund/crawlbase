@@ -10,7 +10,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,11 +28,29 @@ type Page struct {
 	RespDuration int
 	CrawlerId    int
 	Uid          string
+	Response     *PageRequest
+	Request      *PageResponse
 	RespInfo     ResponseInfo
+	ResponseBody []byte `json:"-"`
+	RequestBody  []byte `json:"-"`
+}
+
+type PageResponse struct {
+	Header        http.Header
+	Proto         string
+	Code          int
+	ContentLength int64
+}
+
+type PageRequest struct {
+	URL           *url.URL
+	Header        http.Header
+	Proto         string
+	Code          int
+	ContentLength int64
 }
 
 type ResponseInfo struct {
-	Body       string
 	Hrefs      []string
 	Forms      []Form
 	Ressources []Ressource
@@ -73,10 +93,11 @@ type JSInfo struct {
 }
 
 type Crawler struct {
-	Header             http.Header
-	Client             http.Client
-	Validator          htmlcheck.Validator
-	IncludeHiddenLinks bool
+	Header              http.Header
+	Client              http.Client
+	Validator           htmlcheck.Validator
+	IncludeHiddenLinks  bool
+	WaitBetweenRequests int
 }
 
 var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
@@ -88,6 +109,7 @@ func NewCrawler() *Crawler {
 	cw.Header.Set("User-Agent", headerUserAgentChrome)
 	cw.Client.Timeout = 30 * time.Second
 	cw.Validator = htmlcheck.Validator{}
+	cw.WaitBetweenRequests = 1 * 1000
 	return &cw
 }
 
@@ -140,11 +162,12 @@ func (c *Crawler) GetPage(url, method string) (*Page, error) {
 func (c *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 	page := Page{}
 
-	page.RespInfo.Body = string(data)
+	body := string(data)
+	page.ResponseBody = data
 	ioreader := bytes.NewReader(data)
 	doc, err := goquery.NewDocumentFromReader(ioreader)
-	page.RespInfo.TextUrls = GetUrlsFromText(page.RespInfo.Body)
-	page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(page.RespInfo.Body)
+	page.RespInfo.TextUrls = GetUrlsFromText(body)
+	page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(body)
 
 	if err == nil {
 		hrefs := GetHrefs(doc, url, !c.IncludeHiddenLinks)
@@ -168,6 +191,29 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.RespCode = res.StatusCode
 	page.RespDuration = int(timeDur.Seconds() * 1000)
 	return page
+}
+
+func (c *Crawler) SavePage(page *Page) {
+	_, err := os.Stat("./storage")
+	if err != nil && os.IsNotExist(err) {
+		err := os.Mkdir("storage", 0777)
+		checkError(err)
+	}
+
+	fileName := strconv.FormatInt(int64(page.CrawlTime), 10)
+	err = ioutil.WriteFile("./storage/"+fileName+".resbin", page.ResponseBody, 0666)
+	checkError(err)
+
+	content, err := json.MarshalIndent(page, "", "  ")
+	checkError(err)
+	err = ioutil.WriteFile("./storage/"+fileName+".httpt", content, 0666)
+
+}
+
+func checkError(e error) {
+	if e != nil {
+		log.Fatal(e)
+	}
 }
 
 func GetUrlsFromText(text string) []string {
