@@ -99,6 +99,7 @@ type Crawler struct {
 	IncludeHiddenLinks  bool
 	WaitBetweenRequests int
 	CheckForHtmlErrors  bool
+	Links               map[string]bool
 }
 
 var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
@@ -112,6 +113,7 @@ func NewCrawler() *Crawler {
 	cw.Validator = htmlcheck.Validator{}
 	cw.WaitBetweenRequests = 1 * 1000
 	cw.CheckForHtmlErrors = true
+	cw.Links = map[string]bool{}
 	return &cw
 }
 
@@ -195,6 +197,58 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.RespCode = res.StatusCode
 	page.RespDuration = int(timeDur.Seconds() * 1000)
 	return page
+}
+
+func (c *Crawler) GetNextLink() (string, bool) {
+	for i, l := range c.Links {
+		if l == false {
+			return i, true
+		}
+	}
+	return "", false
+}
+
+func (c *Crawler) LoadPages(folderpath string) (int, error) {
+	files, err := ioutil.ReadDir(folderpath)
+	if err != nil {
+		return 0, err
+	}
+
+	readCount := 0
+
+	for _, file := range files {
+		fName := file.Name()
+		isHttpi := strings.HasSuffix(fName, ".httpi")
+		if !isHttpi {
+			continue
+		}
+
+		p, err := LoadPage(folderpath+"/"+fName, false)
+		if err != nil {
+			return readCount, err
+		}
+
+		c.Links[p.URL] = true
+		for _, link := range p.RespInfo.Hrefs {
+			c.Links[link] = false
+		}
+		readCount += 1
+	}
+	return readCount, nil
+}
+
+func LoadPage(Filepath string, withContent bool) (*Page, error) {
+	content, err := ioutil.ReadFile(Filepath)
+	if err != nil {
+		return nil, err
+	}
+
+	page := Page{}
+	err = json.Unmarshal(content, &page)
+	if err != nil {
+		return nil, err
+	}
+	return &page, nil
 }
 
 func (c *Crawler) SavePage(page *Page) {
