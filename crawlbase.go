@@ -30,9 +30,9 @@ type Page struct {
 	Uid          string
 	Response     *PageRequest
 	Request      *PageResponse
-	RespInfo     ResponseInfo `json:"-"`
-	ResponseBody []byte       `json:"-"`
-	RequestBody  []byte       `json:"-"`
+	RespInfo     ResponseInfo
+	ResponseBody []byte `json:"-"`
+	RequestBody  []byte `json:"-"`
 }
 
 type PageResponse struct {
@@ -98,6 +98,7 @@ type Crawler struct {
 	Validator           htmlcheck.Validator
 	IncludeHiddenLinks  bool
 	WaitBetweenRequests int
+	CheckForHtmlErrors  bool
 }
 
 var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
@@ -110,6 +111,7 @@ func NewCrawler() *Crawler {
 	cw.Client.Timeout = 30 * time.Second
 	cw.Validator = htmlcheck.Validator{}
 	cw.WaitBetweenRequests = 1 * 1000
+	cw.CheckForHtmlErrors = true
 	return &cw
 }
 
@@ -167,7 +169,9 @@ func (c *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 	ioreader := bytes.NewReader(data)
 	doc, err := goquery.NewDocumentFromReader(ioreader)
 	page.RespInfo.TextUrls = GetUrlsFromText(body)
-	page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(body)
+	if c.CheckForHtmlErrors {
+		page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(body)
+	}
 
 	if err == nil {
 		hrefs := GetHrefs(doc, url, !c.IncludeHiddenLinks)
@@ -201,16 +205,17 @@ func (c *Crawler) SavePage(page *Page) {
 	}
 
 	fileName := strconv.FormatInt(int64(page.CrawlTime), 10)
-	err = ioutil.WriteFile("./storage/"+fileName+".resbin", page.ResponseBody, 0666)
+	err = ioutil.WriteFile("./storage/"+fileName+".respbin", page.ResponseBody, 0666)
 	checkError(err)
 
 	content, err := json.MarshalIndent(page, "", "  ")
 	checkError(err)
-	err = ioutil.WriteFile("./storage/"+fileName+".http", content, 0666)
+	err = ioutil.WriteFile("./storage/"+fileName+".httpi", content, 0666)
 
-	content, err = json.MarshalIndent(page.RespInfo, "", "  ")
+	/*content, err = json.MarshalIndent(page.RespInfo, "", "  ")
 	checkError(err)
 	err = ioutil.WriteFile("./storage/"+fileName+".httpInfo", content, 0666)
+	*/
 }
 
 func checkError(e error) {
