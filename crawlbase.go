@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,11 +26,11 @@ type Page struct {
 	URL          string
 	CrawlTime    int
 	RespCode     int
-	RespDuration int
+	RespDuration int // in milliseconds
 	CrawlerId    int
 	Uid          string
-	Response     *PageRequest
-	Request      *PageResponse
+	Response     *PageResponse
+	Request      *PageRequest
 	RespInfo     ResponseInfo
 	ResponseBody []byte `json:"-"`
 	RequestBody  []byte `json:"-"`
@@ -38,7 +39,7 @@ type Page struct {
 type PageResponse struct {
 	Header        http.Header
 	Proto         string
-	Code          int
+	StatusCode    int
 	ContentLength int64
 }
 
@@ -46,7 +47,6 @@ type PageRequest struct {
 	URL           *url.URL
 	Header        http.Header
 	Proto         string
-	Code          int
 	ContentLength int64
 }
 
@@ -163,16 +163,20 @@ func (c *Crawler) GetPage(url, method string) (*Page, error) {
 	return page, nil
 }
 
-func (c *Crawler) PageFromData(data []byte, url *url.URL) *Page {
+func (c *Crawler) PageFromData(data []byte, url *url.URL, contentMime string) *Page {
 	page := Page{}
 
 	body := string(data)
 	page.ResponseBody = data
+
 	ioreader := bytes.NewReader(data)
 	doc, err := goquery.NewDocumentFromReader(ioreader)
 	page.RespInfo.TextUrls = GetUrlsFromText(body)
-	if c.CheckForHtmlErrors {
-		page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(body)
+
+	if contentMime == "text/html" {
+		if c.CheckForHtmlErrors {
+			page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(body)
+		}
 	}
 
 	if err == nil {
@@ -181,14 +185,21 @@ func (c *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 		page.RespInfo.Forms = GetFormUrls(doc, url)
 		page.RespInfo.Ressources = GetRessources(doc, url)
 	}
+
 	return &page
 }
 
 func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDur time.Duration) *Page {
 	body, err := ioutil.ReadAll(res.Body)
 	page := &Page{}
+
+	contentMime := strings.Split(res.Header.Get("Content-Type"), ";")[0]
+	if contentMime == "" {
+		contentMime = "text/html"
+	}
+
 	if err == nil {
-		page = c.PageFromData(body, req.URL)
+		page = c.PageFromData(body, req.URL, contentMime)
 	}
 
 	page.CrawlTime = int(time.Now().Unix())
@@ -196,6 +207,14 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.Uid = ToSha256(page.URL)
 	page.RespCode = res.StatusCode
 	page.RespDuration = int(timeDur.Seconds() * 1000)
+	page.Request = &PageRequest{}
+	page.Request.Header = req.Header
+	page.Request.Proto = req.Proto
+	page.Request.ContentLength = req.ContentLength
+	page.Response = &PageResponse{}
+	page.Response.StatusCode = res.StatusCode
+	page.Response.Header = res.Header
+	page.Response.Proto = res.Proto
 	return page
 }
 
@@ -209,21 +228,16 @@ func (c *Crawler) GetNextLink() (string, bool) {
 }
 
 func (c *Crawler) LoadPages(folderpath string) (int, error) {
-	files, err := ioutil.ReadDir(folderpath)
+
+	files, err := GetPageInfoFiles(folderpath)
 	if err != nil {
-		return 0, err
+		log.Fatal(err)
 	}
 
 	readCount := 0
 
 	for _, file := range files {
-		fName := file.Name()
-		isHttpi := strings.HasSuffix(fName, ".httpi")
-		if !isHttpi {
-			continue
-		}
-
-		p, err := LoadPage(folderpath+"/"+fName, false)
+		p, err := LoadPage(file, false)
 		if err != nil {
 			return readCount, err
 		}
@@ -235,6 +249,23 @@ func (c *Crawler) LoadPages(folderpath string) (int, error) {
 		readCount += 1
 	}
 	return readCount, nil
+}
+
+func GetPageInfoFiles(folder string) ([]string, error) {
+	files, err := ioutil.ReadDir(folder)
+	paths := []string{}
+	if err != nil {
+		return paths, err
+	}
+
+	for _, file := range files {
+		isHttpi := strings.HasSuffix(file.Name(), ".httpi")
+		if !isHttpi {
+			continue
+		}
+		paths = append(paths, path.Join(folder, file.Name()))
+	}
+	return paths, nil
 }
 
 func LoadPage(Filepath string, withContent bool) (*Page, error) {
