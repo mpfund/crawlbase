@@ -44,7 +44,6 @@ type PageResponse struct {
 }
 
 type PageRequest struct {
-	URL           *url.URL
 	Header        http.Header
 	Proto         string
 	ContentLength int64
