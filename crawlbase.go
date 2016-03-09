@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"log"
 	"net"
@@ -25,7 +26,6 @@ import (
 type Page struct {
 	URL          string
 	CrawlTime    int
-	RespCode     int
 	RespDuration int // in milliseconds
 	CrawlerId    int
 	Uid          string
@@ -104,9 +104,14 @@ type Crawler struct {
 
 var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
 
+var ErrorCheckRedirect = errors.New("dont redirect")
+
 func NewCrawler() *Crawler {
 	cw := Crawler{}
 	cw.Client = http.Client{}
+	cw.Client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return ErrorCheckRedirect
+	}
 	cw.Header = http.Header{}
 	cw.Header.Set("User-Agent", headerUserAgentChrome)
 	cw.Client.Timeout = 30 * time.Second
@@ -142,10 +147,11 @@ func WriteTagsToFile(tags []*htmlcheck.ValidTag, path string) error {
 	return nil
 }
 
-func (c *Crawler) GetPage(url, method string) (*Page, error) {
+func (c *Crawler) GetPage(crawlUrl, method string) (*Page, error) {
 	timeStart := time.Now()
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest(method, crawlUrl, nil)
 	if err != nil {
+		log.Println("GetPage", err)
 		return nil, err
 	}
 
@@ -155,11 +161,18 @@ func (c *Crawler) GetPage(url, method string) (*Page, error) {
 
 	res, err := c.Client.Do(req)
 	if err != nil {
-		return nil, err
+		urlerror, ok := err.(*url.Error)
+		if !ok || urlerror.Err != ErrorCheckRedirect {
+			log.Println("GetPage2", err)
+			log.Printf("%#v", err)
+			return nil, err
+		}
 	}
+
 	timeDur := time.Now().Sub(timeStart)
 
 	page := c.PageFromResponse(req, res, timeDur)
+
 	return page, nil
 }
 
@@ -205,7 +218,6 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.CrawlTime = int(time.Now().Unix())
 	page.URL = req.URL.String()
 	page.Uid = ToSha256(page.URL)
-	page.RespCode = res.StatusCode
 	page.RespDuration = int(timeDur.Seconds() * 1000)
 	page.Request = &PageRequest{}
 	page.Request.Header = req.Header
@@ -215,7 +227,25 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.Response.StatusCode = res.StatusCode
 	page.Response.Header = res.Header
 	page.Response.Proto = res.Proto
+
+	isRedirect, location := LocationFromPage(page)
+	if isRedirect {
+		hasLocation := ContainsString(page.RespInfo.Hrefs, location)
+		if !hasLocation {
+			page.RespInfo.Hrefs = append(page.RespInfo.Hrefs, location)
+		}
+	}
+
 	return page
+}
+
+func ContainsString(arr []string, key string) bool {
+	for _, x := range arr {
+		if x == key {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Crawler) GetNextLink() (string, bool) {
@@ -251,6 +281,14 @@ func (c *Crawler) LoadPages(folderpath string) (int, error) {
 	return readCount, nil
 }
 
+func LocationFromPage(page *Page) (bool, string) {
+	if page.Response.StatusCode >= 300 && page.Response.StatusCode < 308 {
+		loc := page.Response.Header.Get("Location")
+		return true, loc
+	}
+	return false, ""
+}
+
 func GetPageInfoFiles(folder string) ([]string, error) {
 	files, err := ioutil.ReadDir(folder)
 	paths := []string{}
@@ -283,6 +321,9 @@ func LoadPage(Filepath string, withContent bool) (*Page, error) {
 }
 
 func (c *Crawler) SavePage(page *Page) {
+	if page == nil {
+		log.Fatal("SavePage: page is null")
+	}
 	_, err := os.Stat("./storage")
 	if err != nil && os.IsNotExist(err) {
 		err := os.Mkdir("storage", 0777)
