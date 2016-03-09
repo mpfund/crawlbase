@@ -2,7 +2,7 @@ package crawlbase
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -183,6 +183,9 @@ func (c *Crawler) PageFromData(data []byte, url *url.URL, contentMime string) *P
 
 	ioreader := bytes.NewReader(data)
 	doc, err := goquery.NewDocumentFromReader(ioreader)
+	if err != nil {
+		log.Println("PageFromData: ", err)
+	}
 	page.RespInfo.TextUrls = GetUrlsFromText(body)
 
 	if contentMime == "text/html" {
@@ -216,7 +219,7 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 
 	page.CrawlTime = int(time.Now().Unix())
 	page.URL = req.URL.String()
-	page.Uid = ToSha256(page.URL)
+	page.Uid = ToHash(page.URL)
 	page.RespDuration = int(timeDur.Seconds() * 1000)
 	page.Request = &PageRequest{}
 	page.Request.Header = req.Header
@@ -528,8 +531,8 @@ func ToAbsUrl(baseurl *url.URL, weburl string) string {
 	return absurl.String()
 }
 
-func ToSha256(message string) string {
-	h := sha256.New()
+func ToHash(message string) string {
+	h := sha1.New()
 	h.Write([]byte(message))
 	return hex.EncodeToString(h.Sum(nil))
 }
