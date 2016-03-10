@@ -99,6 +99,10 @@ type Crawler struct {
 	WaitBetweenRequests int
 	CheckForHtmlErrors  bool
 	Links               map[string]bool
+	BeforeCrawlFn       func(string) (string, error)
+	AfterCrawlFn        func(*Page) ([]string, error)
+	ValidSchemes        []string
+	PageCount           uint64
 }
 
 var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
@@ -118,6 +122,7 @@ func NewCrawler() *Crawler {
 	cw.WaitBetweenRequests = 1 * 1000
 	cw.CheckForHtmlErrors = true
 	cw.Links = map[string]bool{}
+	cw.ValidSchemes = []string{"http", "https"}
 	return &cw
 }
 
@@ -175,7 +180,88 @@ func (c *Crawler) GetPage(crawlUrl, method string) (*Page, error) {
 	return page, nil
 }
 
-func (c *Crawler) PageFromData(data []byte, url *url.URL, contentMime string) *Page {
+func (cw *Crawler) FetchSites(startUrl *url.URL) error {
+	cw.Links[startUrl.String()] = false // startsite
+	crawlCount := uint64(0)
+
+	for {
+		urlStr, found := cw.GetNextLink()
+		if !found {
+			log.Println("crawled ", crawlCount, "link(s). all links done.")
+			return nil // done
+		}
+
+		if cw.BeforeCrawlFn != nil {
+			url, err := cw.BeforeCrawlFn(urlStr)
+			if err != nil {
+				return err
+			}
+			urlStr = url
+		}
+
+		cw.Links[urlStr] = true
+
+		nextUrl, err := url.Parse(urlStr)
+		if err != nil {
+			log.Println("error while parsing url: " + err.Error())
+			continue
+		}
+		if !cw.IsValidScheme(nextUrl) {
+			log.Println("scheme invalid, skipping url:" + nextUrl.String())
+			continue
+		}
+
+		log.Println("parsing site: " + urlStr)
+
+		ht, err := cw.GetPage(urlStr, "GET")
+
+		userLinks := []string{}
+		if cw.AfterCrawlFn != nil {
+			userLinks, err = cw.AfterCrawlFn(ht)
+			if err != nil {
+				log.Println("error, AfterCrawlFn", err)
+				return err
+			}
+		}
+
+		cw.SavePage(ht)
+		crawlCount += 1
+
+		cw.AddLinks(ht.RespInfo.Hrefs, startUrl)
+		cw.AddLinks(userLinks, startUrl)
+
+		time.Sleep(time.Duration(cw.WaitBetweenRequests) * time.Millisecond)
+	}
+}
+
+func (cw *Crawler) AddAllLinks(links []string) {
+	for _, newLink := range links {
+		val, hasLink := cw.Links[newLink]
+		if hasLink && val == true {
+			continue
+		}
+		cw.Links[newLink] = false
+	}
+}
+
+func (cw *Crawler) AddLinks(links []string, startUrl *url.URL) {
+	for _, newLink := range links {
+
+		newLinkUrl, err := url.Parse(newLink)
+		if err != nil {
+			continue
+		}
+		if newLinkUrl.Host == startUrl.Host {
+			cw.AddAllLinks([]string{newLink})
+		}
+	}
+}
+
+func (cw *Crawler) IsValidScheme(url *url.URL) bool {
+	return ContainsString(cw.ValidSchemes, url.Scheme)
+}
+
+func (cw *Crawler) PageFromData(data []byte, url *url.URL, contentMime string) *Page {
 	page := Page{}
 
 	body := string(data)
@@ -189,13 +275,13 @@ func (c *Crawler) PageFromData(data []byte, url *url.URL, contentMime string) *P
 	page.RespInfo.TextUrls = GetUrlsFromText(body)
 
 	if contentMime == "text/html" {
-		if c.CheckForHtmlErrors {
-			page.RespInfo.HtmlErrors = c.Validator.ValidateHtmlString(body)
+		if cw.CheckForHtmlErrors {
+			page.RespInfo.HtmlErrors = cw.Validator.ValidateHtmlString(body)
 		}
 	}
 
 	if err == nil {
-		hrefs := GetHrefs(doc, url, !c.IncludeHiddenLinks)
+		hrefs := GetHrefs(doc, url, !cw.IncludeHiddenLinks)
 		page.RespInfo.Hrefs = hrefs
 		page.RespInfo.Forms = GetFormUrls(doc, url)
 		page.RespInfo.Ressources = GetRessources(doc, url)
@@ -259,7 +345,7 @@ func (c *Crawler) GetNextLink() (string, bool) {
 	return "", false
 }
 
-func (c *Crawler) LoadPages(folderpath string) (int, error) {
+func (cw *Crawler) LoadPages(folderpath string) (int, error) {
 
 	files, err := GetPageInfoFiles(folderpath)
 	if err != nil {
@@ -274,13 +360,21 @@ func (c *Crawler) LoadPages(folderpath string) (int, error) {
 			return readCount, err
 		}
 
-		c.Links[p.URL] = true
-		for _, link := range p.RespInfo.Hrefs {
-			c.Links[link] = false
-		}
+		cw.AddAllLinks(p.RespInfo.Hrefs)
+
 		readCount += 1
 	}
 	return readCount, nil
+}
+
+func (cw *Crawler) RemoveLinksNotSameHost(baseUrl *url.URL) {
+	for k, _ := range cw.Links {
+		pUrl, err := url.Parse(k)
+		if err != nil || pUrl.Host != baseUrl.Host {
+			log.Println("removing ", k)
+			delete(cw.Links, k)
+		}
+	}
 }
 
 func LocationFromPage(page *Page) (bool, string) {

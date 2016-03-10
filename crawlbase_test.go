@@ -40,3 +40,18 @@ func TestGetVisibleHrefs(t *testing.T) {
 		t.Error("incorrect link count")
 	}
 }
+
+func TestCrawlerAddLinks(t *testing.T) {
+	cw := NewCrawler()
+	links := []string{
+		"http://google.com",
+		"http://google.com/3",
+		"http://google.de/3",
+	}
+	bUrl, _ := url.Parse("http://google.com/35325")
+
+	cw.AddLinks(links, bUrl)
+	if len(cw.Links) != 2 {
+		t.Error("incorrect link count")
+	}
+}
