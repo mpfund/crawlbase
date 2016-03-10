@@ -32,6 +32,7 @@ type Page struct {
 	Response     *PageResponse
 	Request      *PageRequest
 	RespInfo     ResponseInfo
+	Error        string
 	ResponseBody []byte `json:"-"`
 	RequestBody  []byte `json:"-"`
 }
@@ -100,7 +101,7 @@ type Crawler struct {
 	CheckForHtmlErrors  bool
 	Links               map[string]bool
 	BeforeCrawlFn       func(string) (string, error)
-	AfterCrawlFn        func(*Page) ([]string, error)
+	AfterCrawlFn        func(*Page, error) ([]string, error)
 	ValidSchemes        []string
 	PageCount           uint64
 }
@@ -155,7 +156,7 @@ func (c *Crawler) GetPage(crawlUrl, method string) (*Page, error) {
 	timeStart := time.Now()
 	req, err := http.NewRequest(method, crawlUrl, nil)
 	if err != nil {
-		log.Println("GetPage", err)
+		log.Println("GetPage ", err)
 		return nil, err
 	}
 
@@ -164,18 +165,18 @@ func (c *Crawler) GetPage(crawlUrl, method string) (*Page, error) {
 	}
 
 	res, err := c.Client.Do(req)
+
+	timeDur := time.Now().Sub(timeStart)
+	page := c.PageFromResponse(req, res, timeDur)
+
 	if err != nil {
 		urlerror, ok := err.(*url.Error)
 		if !ok || urlerror.Err != ErrorCheckRedirect {
-			log.Println("GetPage2", err)
-			log.Printf("%#v", err)
-			return nil, err
+			log.Println("GetPageAfterRequest ", err, res)
+			page.Error = err.Error()
+			return page, err
 		}
 	}
-
-	timeDur := time.Now().Sub(timeStart)
-
-	page := c.PageFromResponse(req, res, timeDur)
 
 	return page, nil
 }
@@ -232,7 +233,7 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 
 		userLinks := []string{}
 		if cw.AfterCrawlFn != nil {
-			userLinks, err = cw.AfterCrawlFn(ht)
+			userLinks, err = cw.AfterCrawlFn(ht, err)
 			if err != nil {
 				log.Println("error, AfterCrawlFn", err)
 				return err
@@ -317,12 +318,19 @@ func (cw *Crawler) PageFromData(data []byte, url *url.URL, contentMime string) *
 }
 
 func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDur time.Duration) *Page {
-	body, err := ioutil.ReadAll(res.Body)
 	page := &Page{}
+	body := []byte{}
 
-	contentMime := strings.Split(res.Header.Get("Content-Type"), ";")[0]
-	if contentMime == "" {
-		contentMime = "text/html"
+	var err error = nil
+	contentMime := ""
+
+	if res != nil {
+		body, err = ioutil.ReadAll(res.Body)
+
+		contentMime = strings.Split(res.Header.Get("Content-Type"), ";")[0]
+		if contentMime == "" {
+			contentMime = "text/html"
+		}
 	}
 
 	if err == nil {
@@ -338,9 +346,11 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.Request.Proto = req.Proto
 	page.Request.ContentLength = req.ContentLength
 	page.Response = &PageResponse{}
-	page.Response.StatusCode = res.StatusCode
-	page.Response.Header = res.Header
-	page.Response.Proto = res.Proto
+	if res != nil {
+		page.Response.StatusCode = res.StatusCode
+		page.Response.Header = res.Header
+		page.Response.Proto = res.Proto
+	}
 
 	isRedirect, location := LocationFromPage(page)
 	if isRedirect {
