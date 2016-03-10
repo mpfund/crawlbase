@@ -181,13 +181,28 @@ func (c *Crawler) GetPage(crawlUrl, method string) (*Page, error) {
 }
 
 func (cw *Crawler) FetchSites(startUrl *url.URL) error {
-	cw.Links[startUrl.String()] = false // startsite
-	crawlCount := uint64(0)
+	cw.AddAllLinks([]string{startUrl.String()})
+
+	crawlStartUrlFirst := false
+	if !cw.IsCrawled(startUrl.String()) {
+		crawlStartUrlFirst = true
+	} else {
+		log.Println("start url is already cralwed, skipping: ", startUrl.String())
+	}
 
 	for {
-		urlStr, found := cw.GetNextLink()
+		urlStr := ""
+		found := false
+		if !crawlStartUrlFirst {
+			urlStr, found = cw.GetNextLink()
+		} else {
+			urlStr = startUrl.String()
+			crawlStartUrlFirst = false
+			found = true
+		}
+
 		if !found {
-			log.Println("crawled ", crawlCount, "link(s). all links done.")
+			log.Println("crawled ", cw.PageCount, "link(s). all links done.")
 			return nil // done
 		}
 
@@ -211,7 +226,7 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 			continue
 		}
 
-		log.Println("parsing site: " + urlStr)
+		log.Println("fetching site: " + urlStr)
 
 		ht, err := cw.GetPage(urlStr, "GET")
 
@@ -225,7 +240,7 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 		}
 
 		cw.SavePage(ht)
-		crawlCount += 1
+		cw.PageCount += 1
 
 		cw.AddLinks(ht.RespInfo.Hrefs, startUrl)
 		cw.AddLinks(userLinks, startUrl)
@@ -234,13 +249,24 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 	}
 }
 
+func (cw *Crawler) IsCrawled(url string) bool {
+	val, hasLink := cw.Links[url]
+	if hasLink && val == true {
+		return true
+	}
+	return false
+}
+
+func (cw *Crawler) AddCrawledLinks(links []string) {
+	for _, newLink := range links {
+		cw.Links[newLink] = true
+	}
+}
+
 func (cw *Crawler) AddAllLinks(links []string) {
 	for _, newLink := range links {
-		val, hasLink := cw.Links[newLink]
-		if hasLink && val == true {
-			continue
-		}
-		cw.Links[newLink] = false
+		isCrawled := cw.IsCrawled(newLink)
+		cw.Links[newLink] = isCrawled
 	}
 }
 
@@ -346,7 +372,6 @@ func (c *Crawler) GetNextLink() (string, bool) {
 }
 
 func (cw *Crawler) LoadPages(folderpath string) (int, error) {
-
 	files, err := GetPageInfoFiles(folderpath)
 	if err != nil {
 		log.Fatal(err)
@@ -360,8 +385,8 @@ func (cw *Crawler) LoadPages(folderpath string) (int, error) {
 			return readCount, err
 		}
 
+		cw.AddCrawledLinks([]string{p.URL})
 		cw.AddAllLinks(p.RespInfo.Hrefs)
-
 		readCount += 1
 	}
 	return readCount, nil
@@ -371,7 +396,6 @@ func (cw *Crawler) RemoveLinksNotSameHost(baseUrl *url.URL) {
 	for k, _ := range cw.Links {
 		pUrl, err := url.Parse(k)
 		if err != nil || pUrl.Host != baseUrl.Host {
-			log.Println("removing ", k)
 			delete(cw.Links, k)
 		}
 	}
