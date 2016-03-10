@@ -2,6 +2,7 @@ package crawlbase
 
 import (
 	"bytes"
+	"net/http"
 	"net/url"
 	"testing"
 )
@@ -38,6 +39,21 @@ func TestGetVisibleHrefs(t *testing.T) {
 	links := GetHrefs(doc, testUrl, false)
 	if len(links) == 1 {
 		t.Error("incorrect link count")
+	}
+}
+
+func TestLocationFromPage(t *testing.T) {
+	p := &Page{}
+	p.Response = &PageResponse{}
+	p.Response.StatusCode = 301
+	p.Response.Header = http.Header{}
+	p.Response.Header.Add("Location", "/test/test3")
+
+	pUrl, _ := url.Parse("http://google.com/q/qe/t?m=5")
+
+	_, locUrl := LocationFromPage(p, pUrl)
+	if locUrl != "http://google.com/test/test3" {
+		t.Error("location path invalid")
 	}
 }
 

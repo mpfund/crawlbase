@@ -352,7 +352,7 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 		page.Response.Proto = res.Proto
 	}
 
-	isRedirect, location := LocationFromPage(page)
+	isRedirect, location := LocationFromPage(page, req.URL)
 	if isRedirect {
 		hasLocation := ContainsString(page.RespInfo.Hrefs, location)
 		if !hasLocation {
@@ -411,9 +411,10 @@ func (cw *Crawler) RemoveLinksNotSameHost(baseUrl *url.URL) {
 	}
 }
 
-func LocationFromPage(page *Page) (bool, string) {
+func LocationFromPage(page *Page, baseUrl *url.URL) (bool, string) {
 	if page.Response.StatusCode >= 300 && page.Response.StatusCode < 308 {
 		loc := page.Response.Header.Get("Location")
+		loc = ToAbsUrl(baseUrl, loc)
 		return true, loc
 	}
 	return false, ""
