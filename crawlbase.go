@@ -482,7 +482,7 @@ func checkError(e error) {
 }
 
 func GetUrlsFromText(text string) []string {
-	r, err := regexp.Compile("((https?|ftp|file):)?//[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[a-zA-Z0-9+&@#/%=~_|]")
+	r, err := regexp.Compile("((https?|ftp|file):)?//[-a-zA-Z0-9.]+/[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[a-zA-Z0-9+&@#/%=~_|]")
 	if err != nil {
 		log.Fatal(err)
 	}
