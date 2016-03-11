@@ -310,6 +310,8 @@ func (cw *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 
 func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDur time.Duration) *Page {
 	page := &Page{}
+	page.Response = &PageResponse{}
+	page.Request = &PageRequest{}
 
 	body := []byte{}
 
