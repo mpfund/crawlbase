@@ -76,6 +76,23 @@ func TestGetUrlsFromText(t *testing.T) {
 	}
 }
 
+func TestGetDomain(t *testing.T) {
+	domain := GetDomain("www.ifempty.de")
+	if domain != "ifempty.de" {
+		t.Error("error in GetDomain")
+	}
+
+	domain = GetDomain("ifempty.de")
+	if domain != "ifempty.de" {
+		t.Error("error in GetDomain")
+	}
+
+	domain = GetDomain("localhost")
+	if domain != "localhost" {
+		t.Error("error in GetDomain")
+	}
+}
+
 func TestCrawlerAddLinks(t *testing.T) {
 	cw := NewCrawler()
 	links := []string{

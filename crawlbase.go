@@ -42,12 +42,15 @@ type PageResponse struct {
 	Proto         string
 	StatusCode    int
 	ContentLength int64
+	ContentMIME   string
+	Cookies       []Cookie
 }
 
 type PageRequest struct {
 	Header        http.Header
 	Proto         string
 	ContentLength int64
+	Cookies       []Cookie
 }
 
 type ResponseInfo struct {
@@ -55,10 +58,7 @@ type ResponseInfo struct {
 	Forms      []Form
 	Ressources []Ressource
 	JSInfo     []JSInfo
-	Cookies    []Cookie
 	Requests   []Ressource
-	TextUrls   []string
-	HtmlErrors []*htmlcheck.ValidationError
 }
 
 type FormInput struct {
@@ -95,10 +95,8 @@ type JSInfo struct {
 type Crawler struct {
 	Header              http.Header
 	Client              http.Client
-	Validator           htmlcheck.Validator
 	IncludeHiddenLinks  bool
 	WaitBetweenRequests int
-	CheckForHtmlErrors  bool
 	Links               map[string]bool
 	BeforeCrawlFn       func(string) (string, error)
 	AfterCrawlFn        func(*Page, error) ([]string, error)
@@ -119,9 +117,7 @@ func NewCrawler() *Crawler {
 	cw.Header = http.Header{}
 	cw.Header.Set("User-Agent", headerUserAgentChrome)
 	cw.Client.Timeout = 30 * time.Second
-	cw.Validator = htmlcheck.Validator{}
 	cw.WaitBetweenRequests = 1 * 1000
-	cw.CheckForHtmlErrors = true
 	cw.Links = map[string]bool{}
 	cw.ValidSchemes = []string{"http", "https"}
 	return &cw
@@ -203,7 +199,7 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 		}
 
 		if !found {
-			log.Println("crawled ", cw.PageCount, "link(s). all links done.")
+			log.Println("no more links. crawled ", cw.PageCount, "page(s).")
 			return nil // done
 		}
 
@@ -288,23 +284,15 @@ func (cw *Crawler) IsValidScheme(url *url.URL) bool {
 	return ContainsString(cw.ValidSchemes, url.Scheme)
 }
 
-func (cw *Crawler) PageFromData(data []byte, url *url.URL, contentMime string) *Page {
+func (cw *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 	page := Page{}
 
-	body := string(data)
 	page.ResponseBody = data
 
 	ioreader := bytes.NewReader(data)
 	doc, err := goquery.NewDocumentFromReader(ioreader)
 	if err != nil {
 		log.Println("PageFromData: ", err)
-	}
-	page.RespInfo.TextUrls = GetUrlsFromText(body)
-
-	if contentMime == "text/html" {
-		if cw.CheckForHtmlErrors {
-			page.RespInfo.HtmlErrors = cw.Validator.ValidateHtmlString(body)
-		}
 	}
 
 	if err == nil {
@@ -314,51 +302,51 @@ func (cw *Crawler) PageFromData(data []byte, url *url.URL, contentMime string) *
 		page.RespInfo.Ressources = GetRessources(doc, url)
 	}
 
+	page.Response = &PageResponse{}
+	page.Request = &PageRequest{}
+
 	return &page
 }
 
 func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDur time.Duration) *Page {
 	page := &Page{}
+
 	body := []byte{}
 
 	var err error = nil
-	contentMime := ""
 
 	if res != nil {
 		body, err = ioutil.ReadAll(res.Body)
-
-		contentMime = strings.Split(res.Header.Get("Content-Type"), ";")[0]
-		if contentMime == "" {
-			contentMime = "text/html"
+		if err == nil {
+			page = c.PageFromData(body, req.URL)
 		}
-	}
 
-	if err == nil {
-		page = c.PageFromData(body, req.URL, contentMime)
+		contentMIME := strings.Split(res.Header.Get("Content-Type"), ";")[0]
+		if contentMIME == "" {
+			contentMIME = "text/html"
+		}
+
+		page.Response.ContentMIME = contentMIME
+		page.Response.StatusCode = res.StatusCode
+		page.Response.Header = res.Header
+		page.Response.Proto = res.Proto
+
+		isRedirect, location := LocationFromPage(page, req.URL)
+		if isRedirect {
+			hasLocation := ContainsString(page.RespInfo.Hrefs, location)
+			if !hasLocation {
+				page.RespInfo.Hrefs = append(page.RespInfo.Hrefs, location)
+			}
+		}
 	}
 
 	page.CrawlTime = int(time.Now().Unix())
 	page.URL = req.URL.String()
 	page.Uid = ToHash(page.URL)
 	page.RespDuration = int(timeDur.Seconds() * 1000)
-	page.Request = &PageRequest{}
 	page.Request.Header = req.Header
 	page.Request.Proto = req.Proto
 	page.Request.ContentLength = req.ContentLength
-	page.Response = &PageResponse{}
-	if res != nil {
-		page.Response.StatusCode = res.StatusCode
-		page.Response.Header = res.Header
-		page.Response.Proto = res.Proto
-	}
-
-	isRedirect, location := LocationFromPage(page, req.URL)
-	if isRedirect {
-		hasLocation := ContainsString(page.RespInfo.Hrefs, location)
-		if !hasLocation {
-			page.RespInfo.Hrefs = append(page.RespInfo.Hrefs, location)
-		}
-	}
 
 	return page
 }
@@ -403,12 +391,25 @@ func (cw *Crawler) LoadPages(folderpath string) (int, error) {
 }
 
 func (cw *Crawler) RemoveLinksNotSameHost(baseUrl *url.URL) {
+	baseDomain := GetDomain(baseUrl.Host)
 	for k, _ := range cw.Links {
 		pUrl, err := url.Parse(k)
-		if err != nil || pUrl.Host != baseUrl.Host {
+		if err != nil || GetDomain(pUrl.Host) != baseDomain {
 			delete(cw.Links, k)
 		}
 	}
+}
+
+func GetDomain(host string) string {
+	splitted := strings.Split(host, ".")
+	lenSplitted := len(splitted)
+	if lenSplitted >= 2 {
+		return splitted[lenSplitted-2] + "." + splitted[lenSplitted-1]
+	}
+	if lenSplitted >= 1 {
+		return splitted[0]
+	}
+	return host
 }
 
 func LocationFromPage(page *Page, baseUrl *url.URL) (bool, string) {
