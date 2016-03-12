@@ -274,7 +274,7 @@ func (cw *Crawler) AddLinks(links []string, startUrl *url.URL) {
 		if err != nil {
 			continue
 		}
-		if newLinkUrl.Host == startUrl.Host {
+		if IsSameDomain(startUrl, newLinkUrl) {
 			cw.AddAllLinks([]string{newLink})
 		}
 	}
@@ -393,13 +393,16 @@ func (cw *Crawler) LoadPages(folderpath string) (int, error) {
 }
 
 func (cw *Crawler) RemoveLinksNotSameHost(baseUrl *url.URL) {
-	baseDomain := GetDomain(baseUrl.Host)
 	for k, _ := range cw.Links {
 		pUrl, err := url.Parse(k)
-		if err != nil || GetDomain(pUrl.Host) != baseDomain {
+		if err != nil || !IsSameDomain(baseUrl, pUrl) {
 			delete(cw.Links, k)
 		}
 	}
+}
+
+func IsSameDomain(baseUrl *url.URL, testUrl *url.URL) bool {
+	return GetDomain(baseUrl.Host) == GetDomain(testUrl.Host)
 }
 
 func GetDomain(host string) string {
