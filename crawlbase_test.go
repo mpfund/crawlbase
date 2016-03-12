@@ -8,6 +8,14 @@ import (
 )
 import "github.com/PuerkitoBio/goquery"
 
+var links []string = []string{
+	"http://google.com",
+	"http://test.google.com/3",
+	"http://mail.google.com/3",
+	"http://www.google.de/3",
+	"http://test.google.de/3",
+}
+
 func TestGetHrefs(t *testing.T) {
 	str := "<a href='1'></a><a href='1'></a>"
 	ioreader := bytes.NewReader([]byte(str))
@@ -95,15 +103,25 @@ func TestGetDomain(t *testing.T) {
 
 func TestCrawlerAddLinks(t *testing.T) {
 	cw := NewCrawler()
-	links := []string{
-		"http://google.com",
-		"http://google.com/3",
-		"http://google.de/3",
-	}
+
 	bUrl, _ := url.Parse("http://google.com/35325")
 
 	cw.AddLinks(links, bUrl)
-	if len(cw.Links) != 2 {
+	if len(cw.Links) != 3 {
+		t.Error("incorrect link count")
+	}
+}
+
+func TestCrawlerRemoveLinksNotSameHost(t *testing.T) {
+	cw := NewCrawler()
+	bUrl, _ := url.Parse("http://google.com/35325")
+
+	// add all links + remove links not same host
+	// is the same as addLinks with base url
+	cw.AddAllLinks(links)
+	cw.RemoveLinksNotSameHost(bUrl)
+
+	if len(cw.Links) != 3 {
 		t.Error("incorrect link count")
 	}
 }
