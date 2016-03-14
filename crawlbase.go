@@ -499,12 +499,12 @@ func checkError(e error) {
 	}
 }
 
-func GetUrlsFromText(text string) []string {
+func GetUrlsFromText(text string, max int) []string {
 	r, err := regexp.Compile("((https?|ftp|file):)?//[-a-zA-Z0-9.]+/[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[a-zA-Z0-9+&@#/%=~_|]")
 	if err != nil {
 		log.Fatal(err)
 	}
-	return r.FindAllString(text, -1)
+	return r.FindAllString(text, max)
 }
 
 func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
