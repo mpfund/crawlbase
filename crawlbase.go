@@ -323,12 +323,7 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 			page = c.PageFromData(body, req.URL)
 		}
 
-		contentMIME := strings.Split(res.Header.Get("Content-Type"), ";")[0]
-		if contentMIME == "" {
-			contentMIME = "text/html"
-		}
-
-		page.Response.ContentMIME = contentMIME
+		page.Response.ContentMIME = GetContentMime(res.Header)
 		page.Response.StatusCode = res.StatusCode
 		page.Response.Header = res.Header
 		page.Response.Proto = res.Proto
@@ -351,6 +346,14 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	page.Request.ContentLength = req.ContentLength
 
 	return page
+}
+
+func GetContentMime(header http.Header) string {
+	contentMIME := strings.Split(header.Get("Content-Type"), ";")[0]
+	if contentMIME == "" {
+		contentMIME = "text/html"
+	}
+	return contentMIME
 }
 
 func ContainsString(arr []string, key string) bool {
@@ -443,8 +446,8 @@ func GetPageInfoFiles(folder string) ([]string, error) {
 	return paths, nil
 }
 
-func LoadPage(Filepath string, withContent bool) (*Page, error) {
-	content, err := ioutil.ReadFile(Filepath)
+func LoadPage(filepath string, withContent bool) (*Page, error) {
+	content, err := ioutil.ReadFile(filepath)
 	if err != nil {
 		return nil, err
 	}
@@ -454,6 +457,15 @@ func LoadPage(Filepath string, withContent bool) (*Page, error) {
 	if err != nil {
 		return nil, err
 	}
+	if withContent {
+		respbinfile := strings.Replace(filepath, ".httpi", ".respbin", 1)
+		respbinContent, err := ioutil.ReadFile(respbinfile)
+		if err != nil {
+			log.Println(err)
+		}
+		page.ResponseBody = respbinContent
+	}
+
 	return &page, nil
 }
 
