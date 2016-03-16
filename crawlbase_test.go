@@ -68,19 +68,28 @@ func TestLocationFromPage(t *testing.T) {
 func TestGetUrlsFromText(t *testing.T) {
 	text := `
 	nonulrs:
-	///77
+	/sdf77
 	
 	urls:
 	//test.ifempty.net/jquery.cookie.js
 	http://test.ifempty.com/widget
 	https://ifempty/kk
 	https://ifempty82/kk
+	https://test.com
 	//ifempty82/kk
 	//ifempty/m
 	`
-	urls := GetUrlsFromText(text)
-	if len(urls) != 6 {
+	urls := GetUrlsFromText(text, 10)
+	//t.Log(len(urls))
+	//t.Log(urls)
+	if len(urls) != 7 {
 		t.Error("too many/less urls found in text")
+	}
+}
+
+func BenchmarkGetUrlsFromText(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		GetUrlsFromText("sjfdkkkkkkkfjs//www.google.com sdfdfjskjjkljfd", -1)
 	}
 }
 
