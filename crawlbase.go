@@ -501,8 +501,8 @@ func checkError(e error) {
 
 var regFindUrl *regexp.Regexp = regexp.MustCompile("//[a-zA-Z0-9.-]+/?[a-zA-Z0-9+&@#/%?=~_|!:,.;]*")
 
-func GetUrlsFromText(text string, max int) []string {
-	return regFindUrl.FindAllString(text, max)
+func GetUrlsFromText(text []byte, max int) [][]byte {
+	return regFindUrl.FindAll(text, max)
 }
 
 func GetRessources(doc *goquery.Document, baseUrl *url.URL) []Ressource {
