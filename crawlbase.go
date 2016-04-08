@@ -645,6 +645,17 @@ func GetFormUrls(doc *goquery.Document, baseUrl *url.URL) []Form {
 	return forms
 }
 
+func ScanDNS(subdomains []string, name string) map[string][]string {
+	dnsResult := map[string][]string{}
+
+	for _, k := range subdomains {
+		name := strings.TrimSpace(k + "." + name)
+		dnsResult[k], _ = resolveDNS(name)
+	}
+
+	return dnsResult
+}
+
 func resolveDNS(name string) ([]string, error) {
 	config, _ := dns.ClientConfigFromFile("./resolv.conf")
 	c := new(dns.Client)
