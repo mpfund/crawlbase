@@ -104,6 +104,10 @@ type Crawler struct {
 	PageCount           uint64
 }
 
+type DNSScanner struct {
+	config *dns.ClientConfig
+}
+
 var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
 
 var ErrorCheckRedirect = errors.New("dont redirect")
@@ -645,26 +649,31 @@ func GetFormUrls(doc *goquery.Document, baseUrl *url.URL) []Form {
 	return forms
 }
 
-func ScanDNS(subdomains []string, name string) map[string][]string {
+func (ds *DNSScanner) LoadConfigFromFile(name string) error {
+	var err error
+	ds.config, err = dns.ClientConfigFromFile(name)
+	return err
+}
+
+func (ds *DNSScanner) ScanDNS(subdomains []string, name string) map[string][]string {
 	dnsResult := map[string][]string{}
 
 	for _, k := range subdomains {
 		name := strings.TrimSpace(k + "." + name)
-		dnsResult[k], _ = resolveDNS(name)
+		dnsResult[k], _ = ds.ResolveDNS(name)
 	}
 
 	return dnsResult
 }
 
-func resolveDNS(name string) ([]string, error) {
-	config, _ := dns.ClientConfigFromFile("./resolv.conf")
+func (ds *DNSScanner) ResolveDNS(name string) ([]string, error) {
 	c := new(dns.Client)
 
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(name), dns.TypeANY)
 	m.RecursionDesired = true
 
-	r, _, err := c.Exchange(m, net.JoinHostPort(config.Servers[0], config.Port))
+	r, _, err := c.Exchange(m, net.JoinHostPort(ds.config.Servers[0], ds.config.Port))
 	if err != nil {
 		return nil, err
 	}
