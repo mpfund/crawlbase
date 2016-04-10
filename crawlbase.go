@@ -655,23 +655,41 @@ func (ds *DNSScanner) LoadConfigFromFile(name string) error {
 	return err
 }
 
-func (ds *DNSScanner) ScanDNS(subdomains []string, name string) map[string][]string {
+var DnsTypesByName map[string]uint16 = map[string]uint16{
+	"None":  dns.TypeNone,
+	"A":     dns.TypeA,
+	"NS":    dns.TypeNS,
+	"MD":    dns.TypeMD,
+	"MF":    dns.TypeMF,
+	"CNAME": dns.TypeCNAME,
+	"SOA":   dns.TypeSOA,
+	"MB":    dns.TypeMB,
+	"MG":    dns.TypeMG,
+	"MR":    dns.TypeMR,
+	//skipping
+	"MX":  dns.TypeMX,
+	"TXT": dns.TypeTXT,
+	//skipping
+	"ANY":  dns.TypeANY,
+	"AAAA": dns.TypeAAAA,
+}
+
+func (ds *DNSScanner) ScanDNS(subdomains []string, name string, dnsType uint16) map[string][]string {
 	dnsResult := map[string][]string{}
 
 	for _, k := range subdomains {
 		name := strings.TrimSpace(k + "." + name)
-		dnsResult[k], _ = ds.ResolveDNS(name)
+		dnsResult[k], _ = ds.ResolveDNS(name, dnsType)
 	}
 
 	return dnsResult
 }
 
-func (ds *DNSScanner) ResolveDNS(name string) ([]string, error) {
+func (ds *DNSScanner) ResolveDNS(name string, dnsType uint16) ([]string, error) {
 	c := new(dns.Client)
 
 	m := new(dns.Msg)
-	m.SetQuestion(dns.Fqdn(name), dns.TypeANY)
-	m.RecursionDesired = true
+	m.SetQuestion(dns.Fqdn(name), dnsType)
 
 	r, _, err := c.Exchange(m, net.JoinHostPort(ds.config.Servers[0], ds.config.Port))
 	if err != nil {
