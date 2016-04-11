@@ -102,6 +102,7 @@ type Crawler struct {
 	AfterCrawlFn        func(*Page, error) ([]string, error)
 	ValidSchemes        []string
 	PageCount           uint64
+	StorageFolder       string
 }
 
 type DNSScanner struct {
@@ -109,7 +110,6 @@ type DNSScanner struct {
 }
 
 var headerUserAgentChrome string = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"
-
 var ErrorCheckRedirect = errors.New("dont redirect")
 
 func NewCrawler() *Crawler {
@@ -124,6 +124,7 @@ func NewCrawler() *Crawler {
 	cw.WaitBetweenRequests = 1 * 1000
 	cw.Links = map[string]bool{}
 	cw.ValidSchemes = []string{"http", "https"}
+	cw.StorageFolder = "./storage"
 	return &cw
 }
 
@@ -484,12 +485,14 @@ func (c *Crawler) SavePage(page *Page) {
 	}
 
 	fileName := strconv.FormatInt(int64(page.CrawlTime), 10)
-	err = ioutil.WriteFile("./storage/"+fileName+".respbin", page.ResponseBody, 0666)
+	filePath := path.Join(c.StorageFolder, fileName+".respbin")
+	err = ioutil.WriteFile(filePath, page.ResponseBody, 0666)
 	checkError(err)
 
 	content, err := json.MarshalIndent(page, "", "  ")
 	checkError(err)
-	err = ioutil.WriteFile("./storage/"+fileName+".httpi", content, 0666)
+	filePath = path.Join(c.StorageFolder, fileName+".httpi")
+	err = ioutil.WriteFile(filePath, content, 0666)
 
 	/*content, err = json.MarshalIndent(page.RespInfo, "", "  ")
 	checkError(err)
@@ -503,7 +506,7 @@ func checkError(e error) {
 	}
 }
 
-var regFindUrl *regexp.Regexp = regexp.MustCompile("//[a-zA-Z0-9.-]+/?[a-zA-Z0-9+&@#/%?=~_|!:,.;]*")
+var regFindUrl *regexp.Regexp = regexp.MustCompile("[a-zA-Z]+://[a-zA-Z0-9.-]+/?[a-zA-Z0-9+&@#/%?=~_()|!:,.;]*")
 
 func GetUrlsFromText(text []byte, max int) [][]byte {
 	return regFindUrl.FindAll(text, max)
