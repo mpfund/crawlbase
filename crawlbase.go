@@ -103,6 +103,7 @@ type Crawler struct {
 	ValidSchemes        []string
 	PageCount           uint64
 	StorageFolder       string
+	NoNewLinks          bool
 }
 
 type DNSScanner struct {
@@ -125,6 +126,7 @@ func NewCrawler() *Crawler {
 	cw.Links = map[string]bool{}
 	cw.ValidSchemes = []string{"http", "https"}
 	cw.StorageFolder = "./storage"
+	cw.NoNewLinks = false
 	return &cw
 }
 
@@ -183,19 +185,22 @@ func (c *Crawler) GetPage(crawlUrl, method string) (*Page, error) {
 }
 
 func (cw *Crawler) FetchSites(startUrl *url.URL) error {
-	cw.AddAllLinks([]string{startUrl.String()})
-
 	crawlStartUrlFirst := false
-	if !cw.IsCrawled(startUrl.String()) {
-		crawlStartUrlFirst = true
-	} else {
-		log.Println("start url is already cralwed, skipping: ", startUrl.String())
+
+	if startUrl != nil {
+		cw.AddAllLinks([]string{startUrl.String()})
+
+		if !cw.IsCrawled(startUrl.String()) {
+			crawlStartUrlFirst = true
+		} else {
+			log.Println("start url is already cralwed, skipping: ", startUrl.String())
+		}
 	}
 
 	for {
 		urlStr := ""
 		found := false
-		if !crawlStartUrlFirst {
+		if !crawlStartUrlFirst || startUrl == nil {
 			urlStr, found = cw.GetNextLink()
 		} else {
 			urlStr = startUrl.String()
@@ -244,7 +249,14 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 		cw.SavePage(ht)
 		cw.PageCount += 1
 
-		cw.AddLinks(ht.RespInfo.Hrefs, startUrl)
+		if startUrl != nil {
+			if cw.NoNewLinks {
+				cw.AddLinks(ht.RespInfo.Hrefs, startUrl)
+			}
+		} else {
+			cw.AddAllLinks(ht.RespInfo.Hrefs)
+		}
+
 		cw.AddLinks(userLinks, startUrl)
 
 		time.Sleep(time.Duration(cw.WaitBetweenRequests) * time.Millisecond)
@@ -274,7 +286,6 @@ func (cw *Crawler) AddAllLinks(links []string) {
 
 func (cw *Crawler) AddLinks(links []string, startUrl *url.URL) {
 	for _, newLink := range links {
-
 		newLinkUrl, err := url.Parse(newLink)
 		if err != nil {
 			continue
