@@ -249,12 +249,12 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 		cw.SavePage(ht)
 		cw.PageCount += 1
 
-		if startUrl != nil {
-			if cw.NoNewLinks {
+		if cw.NoNewLinks == false {
+			if startUrl != nil {
 				cw.AddLinks(ht.RespInfo.Hrefs, startUrl)
+			} else {
+				cw.AddAllLinks(ht.RespInfo.Hrefs)
 			}
-		} else {
-			cw.AddAllLinks(ht.RespInfo.Hrefs)
 		}
 
 		cw.AddLinks(userLinks, startUrl)
