@@ -300,7 +300,7 @@ func (cw *Crawler) IsValidScheme(url *url.URL) bool {
 	return ContainsString(cw.ValidSchemes, url.Scheme)
 }
 
-func (cw *Crawler) PageFromData(data []byte, url *url.URL) *Page {
+func PageFromData(data []byte, url *url.URL, includeHiddenLinks bool) *Page {
 	page := Page{}
 
 	page.ResponseBody = data
@@ -312,7 +312,7 @@ func (cw *Crawler) PageFromData(data []byte, url *url.URL) *Page {
 	}
 
 	if err == nil {
-		hrefs := GetHrefs(doc, url, !cw.IncludeHiddenLinks)
+		hrefs := GetHrefs(doc, url, !includeHiddenLinks)
 		page.RespInfo.Hrefs = hrefs
 		page.RespInfo.Forms = GetFormUrls(doc, url)
 		page.RespInfo.Ressources = GetRessources(doc, url)
@@ -336,7 +336,7 @@ func (c *Crawler) PageFromResponse(req *http.Request, res *http.Response, timeDu
 	if res != nil {
 		body, err = ioutil.ReadAll(res.Body)
 		if err == nil {
-			page = c.PageFromData(body, req.URL)
+			page = PageFromData(body, req.URL, c.IncludeHiddenLinks)
 		}
 
 		page.Response.ContentMIME = GetContentMime(res.Header)
