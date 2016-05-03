@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BlackEspresso/htmlcheck"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/miekg/dns"
 )
@@ -128,31 +127,6 @@ func NewCrawler() *Crawler {
 	cw.StorageFolder = "./storage"
 	cw.NoNewLinks = false
 	return &cw
-}
-
-func LoadTagsFromFile(path string) ([]*htmlcheck.ValidTag, error) {
-	content, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var validTags []*htmlcheck.ValidTag
-	err = json.Unmarshal(content, &validTags)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return validTags, nil
-}
-
-func WriteTagsToFile(tags []*htmlcheck.ValidTag, path string) error {
-	b, err := json.Marshal(tags)
-	if err != nil {
-		return err
-	}
-	ioutil.WriteFile(path, b, 755)
-	return nil
 }
 
 func (c *Crawler) GetPage(crawlUrl, method string) (*Page, error) {
@@ -519,6 +493,11 @@ func checkError(e error) {
 
 var regFindUrl *regexp.Regexp = regexp.MustCompile("[a-zA-Z]+://[a-zA-Z0-9.-]+/?[a-zA-Z0-9+&@#/%?=~_()|!:,.;]*")
 var regFindWord *regexp.Regexp = regexp.MustCompile("[a-zA-Z]{3,}")
+var regFindIP *regexp.Regexp = regexp.MustCompile(`\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`)
+
+func GetIPsFromText(text []byte, max int) [][]byte {
+	return regFindIP.FindAll(text, max)
+}
 
 func GetUrlsFromText(text []byte, max int) [][]byte {
 	return regFindUrl.FindAll(text, max)
