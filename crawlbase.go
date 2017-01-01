@@ -664,6 +664,7 @@ var DnsTypesByName map[string]uint16 = map[string]uint16{
 	"MB":    dns.TypeMB,
 	"MG":    dns.TypeMG,
 	"MR":    dns.TypeMR,
+	"SRV":   dns.TypeSRV,
 	//skipping
 	"MX":  dns.TypeMX,
 	"TXT": dns.TypeTXT,
