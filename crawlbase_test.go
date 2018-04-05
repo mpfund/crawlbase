@@ -35,7 +35,7 @@ func TestGetAllHrefs(t *testing.T) {
 	testUrl, _ := url.Parse("http://test.com")
 	links := GetHrefs(doc, testUrl, true)
 	if len(links) != 2 {
-		t.Error("incorrect link count")
+		t.Error(links)
 	}
 }
 
@@ -61,7 +61,7 @@ func TestLocationFromPage(t *testing.T) {
 
 	_, locUrl := LocationFromPage(p, pUrl)
 	if locUrl != "http://google.com/test/test3" {
-		t.Error("location path invalid")
+		t.Error("location path invalid: ", locUrl)
 	}
 }
 
@@ -79,17 +79,20 @@ func TestGetUrlsFromText(t *testing.T) {
 	//ifempty82/kk
 	//ifempty/m
 	`
-	urls := GetUrlsFromText(text, 10)
-	//t.Log(len(urls))
-	//t.Log(urls)
+	urls := GetUrlsFromText([]byte(text), 10)
+
 	if len(urls) != 7 {
 		t.Error("too many/less urls found in text")
+		for _,x:= range urls{
+			t.Log(string(x))
+		}
 	}
 }
 
 func BenchmarkGetUrlsFromText(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		GetUrlsFromText("sjfdkkkkkkkfjs//www.google.com sdfdfjskjjkljfd", -1)
+		textRaw := []byte("sjfdkkkkkkkfjs//www.google.com sdfdfjskjjkljfd")
+		GetUrlsFromText(textRaw, -1)
 	}
 }
 
@@ -132,5 +135,19 @@ func TestCrawlerRemoveLinksNotSameHost(t *testing.T) {
 
 	if len(cw.Links) != 3 {
 		t.Error("incorrect link count")
+	}
+}
+
+func TestAbsUrl(t *testing.T) {
+	baseUrl, _ := url.Parse("http://google.com")
+	abs := ToAbsUrl(baseUrl, "/test.html")
+	if abs != "http://google.com/test.html" {
+		t.Error("toAbsUrl incorrect " + abs)
+	}
+
+	baseUrl, _ = url.Parse("http://google.com/subdir/")
+	abs = ToAbsUrl(baseUrl, "/test.html")
+	if abs != "http://google.com/test.html" {
+		t.Error("toAbsUrl incorrect " + abs)
 	}
 }

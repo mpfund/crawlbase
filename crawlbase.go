@@ -3,6 +3,7 @@ package crawlbase
 import (
 	"bytes"
 	"crypto/sha1"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -114,7 +115,10 @@ var ErrorCheckRedirect = errors.New("dont redirect")
 
 func NewCrawler() *Crawler {
 	cw := Crawler{}
-	cw.Client = http.Client{}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	cw.Client = http.Client{Transport: tr}
 	cw.Client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return ErrorCheckRedirect
 	}
@@ -167,7 +171,7 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 		if !cw.IsCrawled(startUrl.String()) {
 			crawlStartUrlFirst = true
 		} else {
-			log.Println("start url is already cralwed, skipping: ", startUrl.String())
+			log.Println("start url already crawled, skipping: ", startUrl.String())
 		}
 	}
 
@@ -491,7 +495,7 @@ func checkError(e error) {
 	}
 }
 
-var regFindUrl *regexp.Regexp = regexp.MustCompile("[a-zA-Z]+://[a-zA-Z0-9.-]+/?[a-zA-Z0-9+&@#/%?=~_()|!:,.;]*")
+var regFindUrl *regexp.Regexp = regexp.MustCompile("[a-zA-Z]?:?//[a-zA-Z0-9.-]+/?[a-zA-Z0-9+&@#/%?=~_()|!:,.;]*")
 var regFindWord *regexp.Regexp = regexp.MustCompile("[a-zA-Z]{3,}")
 var regFindIP *regexp.Regexp = regexp.MustCompile(`\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`)
 
@@ -590,29 +594,35 @@ func IsVisibleCss(style string) bool {
 
 func GetHrefs(doc *goquery.Document, baseUrl *url.URL, removeInvisibles bool) []string {
 	hrefs := []string{}
-	hrefsTest := map[string]bool{}
 
 	doc.Find("a").Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
-		if exists {
-			style, hasStyle := s.Attr("style")
-			if removeInvisibles && hasStyle {
-				isVisible := IsVisibleCss(style)
-				if isVisible {
-					return
-				}
+		if !exists {
+			return
+		}
+		style, hasStyle := s.Attr("style")
+		if removeInvisibles && hasStyle {
+			if IsVisibleCss(style) {
+				return
 			}
+		}
 
-			var fullUrl = ToAbsUrl(baseUrl, href)
-			_, isAlreadyAdded := hrefsTest[fullUrl]
-			if !isAlreadyAdded {
-				hrefsTest[fullUrl] = true
-				hrefs = append(hrefs, fullUrl)
-			}
+		fullUrl := ToAbsUrl(baseUrl, href)
+		if !contains(hrefs,fullUrl) {
+			hrefs = append(hrefs, fullUrl)
 		}
 	})
 
 	return hrefs
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
 
 func GetFormUrls(doc *goquery.Document, baseUrl *url.URL) []Form {
@@ -709,6 +719,7 @@ func ToAbsUrl(baseurl *url.URL, weburl string) string {
 	if err != nil {
 		return ""
 	}
+
 	absurl := baseurl.ResolveReference(relurl)
 	return absurl.String()
 }
@@ -717,4 +728,27 @@ func ToHash(message string) string {
 	h := sha1.New()
 	h.Write([]byte(message))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ReadWordlist(filePath string) ([]string, error) {
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	lines := SplitByLines(string(data))
+
+	return lines, err
+}
+
+func SplitByLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	cleanLines := make([]string, 0, len(lines))
+	for _, k := range lines {
+		line := strings.Trim(k, "\n\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		cleanLines = append(cleanLines, line)
+	}
+	return cleanLines
 }
