@@ -103,7 +103,7 @@ type Crawler struct {
 	ValidSchemes        []string
 	PageCount           uint64
 	StorageFolder       string
-	NoNewLinks          bool
+	ScopeToDomain       bool
 }
 
 type DNSScanner struct {
@@ -129,7 +129,6 @@ func NewCrawler() *Crawler {
 	cw.Links = map[string]bool{}
 	cw.ValidSchemes = []string{"http", "https"}
 	cw.StorageFolder = "./storage"
-	cw.NoNewLinks = false
 	return &cw
 }
 
@@ -211,31 +210,26 @@ func (cw *Crawler) FetchSites(startUrl *url.URL) error {
 			continue
 		}
 
-		log.Println("fetching site: " + urlStr)
+		page, err := cw.GetPage(urlStr, "GET")
+		log.Println("fetched site: "+urlStr, page.Response.StatusCode, len(page.ResponseBody))
 
-		ht, err := cw.GetPage(urlStr, "GET")
-
-		userLinks := []string{}
+		userLinks := page.RespInfo.Hrefs
 		if cw.AfterCrawlFn != nil {
-			userLinks, err = cw.AfterCrawlFn(ht, err)
-			if err != nil {
-				log.Println("error, AfterCrawlFn", err)
-				return err
-			}
+			userLinks, err = cw.AfterCrawlFn(page, err)
 		}
 
-		cw.SavePage(ht)
+		if err != nil {
+			log.Println("after page crawl error: ", err)
+		}
+
+		cw.SavePage(page)
 		cw.PageCount += 1
 
-		if cw.NoNewLinks == false {
-			if startUrl != nil {
-				cw.AddLinks(ht.RespInfo.Hrefs, startUrl)
-			} else {
-				cw.AddAllLinks(ht.RespInfo.Hrefs)
-			}
+		if startUrl !=nil && cw.ScopeToDomain {
+			cw.AddLinksMatchingDomain(userLinks, startUrl)
+		} else {
+			cw.AddAllLinks(userLinks)
 		}
-
-		cw.AddLinks(userLinks, startUrl)
 
 		time.Sleep(time.Duration(cw.WaitBetweenRequests) * time.Millisecond)
 	}
@@ -262,7 +256,7 @@ func (cw *Crawler) AddAllLinks(links []string) {
 	}
 }
 
-func (cw *Crawler) AddLinks(links []string, startUrl *url.URL) {
+func (cw *Crawler) AddLinksMatchingDomain(links []string, startUrl *url.URL) {
 	for _, newLink := range links {
 		newLinkUrl, err := url.Parse(newLink)
 		if err != nil {
@@ -369,6 +363,9 @@ func (c *Crawler) GetNextLink() (string, bool) {
 }
 
 func (cw *Crawler) LoadPages(folderpath string) (int, error) {
+	if folderpath == "" {
+		return 0, nil
+	}
 	files, err := GetPageInfoFiles(folderpath)
 	if err != nil {
 		log.Fatal(err)
@@ -382,8 +379,18 @@ func (cw *Crawler) LoadPages(folderpath string) (int, error) {
 			return readCount, err
 		}
 
-		cw.AddCrawledLinks([]string{p.URL})
-		cw.AddAllLinks(p.RespInfo.Hrefs)
+		url := p.URL
+		if cw.BeforeCrawlFn != nil {
+			url, _ = cw.BeforeCrawlFn(url)
+		}
+
+		links := p.RespInfo.Hrefs
+		if cw.AfterCrawlFn != nil {
+			links, _ = cw.AfterCrawlFn(p, err)
+		}
+
+		cw.AddCrawledLinks([]string{url})
+		cw.AddAllLinks(links)
 		readCount += 1
 	}
 	return readCount, nil
@@ -464,22 +471,26 @@ func LoadPage(filepath string, withContent bool) (*Page, error) {
 }
 
 func (c *Crawler) SavePage(page *Page) {
+	if c.StorageFolder == "" {
+		// dont save if storagepath is empty
+		return
+	}
 	if page == nil {
 		log.Fatal("SavePage: page is null")
 	}
 	_, err := os.Stat("./storage")
 	if err != nil && os.IsNotExist(err) {
 		err := os.Mkdir("storage", 0777)
-		checkError(err)
+		checkFatal(err)
 	}
 
 	fileName := strconv.FormatInt(int64(page.CrawlTime), 10)
 	filePath := path.Join(c.StorageFolder, fileName+".respbin")
 	err = ioutil.WriteFile(filePath, page.ResponseBody, 0666)
-	checkError(err)
+	checkFatal(err)
 
 	content, err := json.MarshalIndent(page, "", "  ")
-	checkError(err)
+	checkFatal(err)
 	filePath = path.Join(c.StorageFolder, fileName+".httpi")
 	err = ioutil.WriteFile(filePath, content, 0666)
 
@@ -489,7 +500,7 @@ func (c *Crawler) SavePage(page *Page) {
 	*/
 }
 
-func checkError(e error) {
+func checkFatal(e error) {
 	if e != nil {
 		log.Fatal(e)
 	}
@@ -608,7 +619,7 @@ func GetHrefs(doc *goquery.Document, baseUrl *url.URL, removeInvisibles bool) []
 		}
 
 		fullUrl := ToAbsUrl(baseUrl, href)
-		if !contains(hrefs,fullUrl) {
+		if !contains(hrefs, fullUrl) {
 			hrefs = append(hrefs, fullUrl)
 		}
 	})
@@ -686,9 +697,17 @@ var DnsTypesByName map[string]uint16 = map[string]uint16{
 func (ds *DNSScanner) ScanDNS(subdomains []string, name string, dnsType uint16) map[string][]string {
 	dnsResult := map[string][]string{}
 
-	for _, k := range subdomains {
-		name := strings.TrimSpace(k + "." + name)
-		dnsResult[k], _ = ds.ResolveDNS(name, dnsType)
+	interpolate := strings.Contains(name, "{w}")
+
+	for _, subdomain := range subdomains {
+		host := ""
+		if interpolate {
+			host = strings.Replace(strings.TrimSpace(name), "{w}", subdomain, 1)
+		} else {
+			host = subdomain + "." + strings.TrimSpace(name)
+		}
+		host = strings.TrimSpace(host)
+		dnsResult[subdomain], _ = ds.ResolveDNS(host, dnsType)
 	}
 
 	return dnsResult
